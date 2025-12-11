@@ -106,7 +106,33 @@ namespace LiveKit
                 unsafe
                 {
                     var uFrame = _resampler.RemixAndResample(frame, _numChannels, _sampleRate);
-                    if (uFrame != null)
+
+                    // Workaround for mono→stereo bug
+                    if ((uFrame == null || uFrame.Length == 0) &&
+                        frame.NumChannels == 1 && _numChannels == 2 &&
+                        frame.SampleRate == _sampleRate)
+                    {
+                        // Manual mono to stereo conversion
+                        int samplesPerChannel = (int)frame.SamplesPerChannel;
+                        short[] monoData = new short[samplesPerChannel];
+                        short[] stereoData = new short[samplesPerChannel * 2];
+
+                        var monoSpan = new Span<byte>(frame.Data.ToPointer(), frame.Length);
+                        MemoryMarshal.Cast<byte, short>(monoSpan).CopyTo(monoData);
+
+                        for (int i = 0; i < samplesPerChannel; i++)
+                        {
+                            stereoData[i * 2] = monoData[i];     // Left
+                            stereoData[i * 2 + 1] = monoData[i]; // Right
+                        }
+
+                        var stereoBytes = MemoryMarshal.Cast<short, byte>(stereoData.AsSpan());
+                        _buffer?.Write(stereoBytes);
+                        return; // Skip normal path
+                    }
+
+                    // Normal path...
+                    if (uFrame != null && uFrame.Length > 0)
                     {
                         var data = new Span<byte>(uFrame.Data.ToPointer(), uFrame.Length);
                         _buffer?.Write(data);
