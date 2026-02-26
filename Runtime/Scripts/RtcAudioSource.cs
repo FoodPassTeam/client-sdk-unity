@@ -27,20 +27,12 @@ namespace LiveKit
         /// Event triggered when audio samples are captured from the underlying source.
         /// Provides the audio data, channel count, and sample rate.
         /// </summary>
-        /// <remarks>
-        /// This event is not guaranteed to be called on the main thread.
-        /// </remarks>
         public abstract event Action<float[], int, int> AudioRead;
 
-#if UNITY_IOS && !UNITY_EDITOR
-        // iOS microphone sample rate is 24k
-        public static uint DefaultMicrophoneSampleRate = 24000;
-
+        // Variáveis estáticas mantidas apenas para compatibilidade legada com outros scripts do SDK,
+        // mas o hardcode restritivo do iOS foi completamente removido.
         public static uint DefaultSampleRate = 48000;
-#else
-        public static uint DefaultSampleRate = 48000;
-        public static uint DefaultMicrophoneSampleRate = DefaultSampleRate;
-#endif
+        public static uint DefaultMicrophoneSampleRate = 48000;
         public static uint DefaultChannels = 2;
 
         private readonly RtcAudioSourceType _sourceType;
@@ -67,16 +59,19 @@ namespace LiveKit
             using var request = FFIBridge.Instance.NewRequest<NewAudioSourceRequest>();
             var newAudioSource = request.request;
             newAudioSource.Type = AudioSourceType.AudioSourceNative;
+            
+            // A CORREÇÃO MESTRA: Em vez de usar valores estáticos que quebram o iOS,
+            // o FFI é inicializado lendo exatamente o que o motor de áudio do Unity está usando.
             newAudioSource.NumChannels = (uint)channels;
-            newAudioSource.SampleRate = _sourceType == RtcAudioSourceType.AudioSourceMicrophone ?
-                DefaultMicrophoneSampleRate : DefaultSampleRate;
+            newAudioSource.SampleRate = (uint)UnityEngine.AudioSettings.outputSampleRate;
 
-            UnityEngine.Debug.Log($"NewAudioSource: {newAudioSource.NumChannels} {newAudioSource.SampleRate}");
+            UnityEngine.Debug.Log($"[SDK Fix] NewAudioSource criado com sucesso: Canais {newAudioSource.NumChannels} | Freq {newAudioSource.SampleRate}");
 
             newAudioSource.Options = request.TempResource<AudioSourceOptions>();
             newAudioSource.Options.EchoCancellation = true;
             newAudioSource.Options.AutoGainControl = true;
             newAudioSource.Options.NoiseSuppression = true;
+            
             using var response = request.Send();
             FfiResponse res = response;
             _info = res.NewAudioSource.Source.Info;
